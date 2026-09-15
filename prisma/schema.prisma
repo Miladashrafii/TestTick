@@ -1,0 +1,294 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMINISTRATOR
+  LEADER
+  SENIOR_TESTER
+  TESTER
+  TEST_DESIGNER
+  GUEST
+}
+
+enum Importance {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ExecutionType {
+  MANUAL
+  AUTOMATED
+}
+
+enum ExecutionStatus {
+  NOT_RUN
+  PASSED
+  FAILED
+  BLOCKED
+  SKIPPED
+}
+
+enum ProjectStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(TESTER)
+  locale       String   @default("en")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships      ProjectMember[]
+  assignedCases    PlanTestCase[]  @relation("Assignee")
+  executions       Execution[]
+  createdCases     TestCase[]      @relation("CaseAuthor")
+  createdSuites    TestSuite[]     @relation("SuiteAuthor")
+  createdPlans     TestPlan[]      @relation("PlanAuthor")
+  createdReqs      Requirement[]   @relation("ReqAuthor")
+}
+
+model TestProject {
+  id          String        @id @default(cuid())
+  name        String
+  prefix      String
+  description String        @default("")
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  members      ProjectMember[]
+  suites       TestSuite[]
+  cases        TestCase[]
+  plans        TestPlan[]
+  platforms    Platform[]
+  requirements Requirement[]
+  customFields CustomField[]
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  role      Role
+  createdAt DateTime @default(now())
+
+  userId    String
+  projectId String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+}
+
+model TestSuite {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  orderIndex  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  projectId String
+  parentId  String?
+  authorId  String?
+  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent    TestSuite?  @relation("SuiteTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  TestSuite[] @relation("SuiteTree")
+  author    User?       @relation("SuiteAuthor", fields: [authorId], references: [id])
+  cases     TestCase[]
+}
+
+model TestCase {
+  id            String        @id @default(cuid())
+  externalId    Int
+  title         String
+  summary       String        @default("")
+  preconditions String        @default("")
+  steps         String        @default("")
+  expectedResult String       @default("")
+  importance    Importance    @default(MEDIUM)
+  executionType ExecutionType @default(MANUAL)
+  version       Int           @default(1)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  projectId String
+  suiteId   String
+  authorId  String?
+  project   TestProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  suite     TestSuite      @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  author    User?          @relation("CaseAuthor", fields: [authorId], references: [id])
+  planLinks PlanTestCase[]
+  reqLinks  RequirementCoverage[]
+  keywords  CaseKeyword[]
+
+  @@unique([projectId, externalId])
+}
+
+model Keyword {
+  id        String   @id @default(cuid())
+  name      String
+  projectId String?
+  cases     CaseKeyword[]
+
+  @@unique([name])
+}
+
+model CaseKeyword {
+  caseId    String
+  keywordId String
+  case      TestCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  keyword   Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  @@id([caseId, keywordId])
+}
+
+model TestPlan {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  projectId String
+  authorId  String?
+  project   TestProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author    User?          @relation("PlanAuthor", fields: [authorId], references: [id])
+  builds    Build[]
+  milestones Milestone[]
+  cases     PlanTestCase[]
+  platforms PlanPlatform[]
+}
+
+model Platform {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  projectId   String
+  project     TestProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  plans       PlanPlatform[]
+  executions  Execution[]
+
+  @@unique([projectId, name])
+}
+
+model PlanPlatform {
+  planId     String
+  platformId String
+  plan       TestPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  platform   Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  @@id([planId, platformId])
+}
+
+model Build {
+  id          String   @id @default(cuid())
+  name        String
+  notes       String   @default("")
+  active      Boolean  @default(true)
+  isOpen      Boolean  @default(true)
+  releasedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  planId     String
+  plan       TestPlan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  executions Execution[]
+
+  @@unique([planId, name])
+}
+
+model Milestone {
+  id          String    @id @default(cuid())
+  name        String
+  targetDate  DateTime?
+  startDate   DateTime?
+  createdAt   DateTime  @default(now())
+
+  planId String
+  plan   TestPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+}
+
+model PlanTestCase {
+  id         String     @id @default(cuid())
+  priority   Importance @default(MEDIUM)
+  assignedAt DateTime   @default(now())
+
+  planId     String
+  caseId     String
+  assigneeId String?
+  plan       TestPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  case       TestCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignee   User?     @relation("Assignee", fields: [assigneeId], references: [id])
+  executions Execution[]
+
+  @@unique([planId, caseId])
+}
+
+model Execution {
+  id        String          @id @default(cuid())
+  status    ExecutionStatus @default(NOT_RUN)
+  notes     String          @default("")
+  duration  Int?
+  executedAt DateTime       @default(now())
+
+  planCaseId String
+  buildId    String
+  platformId String?
+  executorId String?
+  planCase   PlanTestCase @relation(fields: [planCaseId], references: [id], onDelete: Cascade)
+  build      Build        @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  platform   Platform?    @relation(fields: [platformId], references: [id])
+  executor   User?        @relation(fields: [executorId], references: [id])
+}
+
+model Requirement {
+  id          String   @id @default(cuid())
+  docId       String
+  title       String
+  scope       String   @default("")
+  status      String   @default("Draft")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  projectId String
+  authorId  String?
+  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author    User?       @relation("ReqAuthor", fields: [authorId], references: [id])
+  coverage  RequirementCoverage[]
+
+  @@unique([projectId, docId])
+}
+
+model RequirementCoverage {
+  requirementId String
+  caseId        String
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  case          TestCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@id([requirementId, caseId])
+}
+
+model CustomField {
+  id        String   @id @default(cuid())
+  name      String
+  label     String
+  fieldType String   @default("string")
+  appliesTo String   @default("testcase")
+  projectId String
+  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+}
