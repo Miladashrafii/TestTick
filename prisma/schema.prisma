@@ -40,6 +40,30 @@ enum ProjectStatus {
   INACTIVE
 }
 
+enum ReviewStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum IssueProvider {
+  GITHUB
+  JIRA
+  LINEAR
+  CUSTOM
+}
+
+enum ActivityType {
+  COMMENT
+  STATUS_CHANGE
+  ASSIGNMENT
+  REVIEW
+  EXECUTION
+  SYSTEM
+  MENTION
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -47,17 +71,28 @@ model User {
   passwordHash String
   role         Role     @default(TESTER)
   locale       String   @default("en")
+  theme        String   @default("light")
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships      ProjectMember[]
-  assignedCases    PlanTestCase[]  @relation("Assignee")
-  executions       Execution[]
-  createdCases     TestCase[]      @relation("CaseAuthor")
-  createdSuites    TestSuite[]     @relation("SuiteAuthor")
-  createdPlans     TestPlan[]      @relation("PlanAuthor")
-  createdReqs      Requirement[]   @relation("ReqAuthor")
+  memberships       ProjectMember[]
+  assignedCases     PlanTestCase[]      @relation("Assignee")
+  executions        Execution[]
+  createdCases      TestCase[]          @relation("CaseAuthor")
+  createdSuites     TestSuite[]         @relation("SuiteAuthor")
+  createdPlans      TestPlan[]          @relation("PlanAuthor")
+  createdReqs       Requirement[]       @relation("ReqAuthor")
+  activities        Activity[]
+  mentions          Mention[]
+  presence          Presence[]
+  savedViews        SavedView[]
+  apiKeys           ApiKey[]
+  exploratorySessions ExploratorySession[]
+  reviewedCases     TestCase[]          @relation("CaseReviewer")
+  reviewedPlans     TestPlan[]          @relation("PlanReviewer")
+  issueLinks        IssueLink[]
+  customFieldValues CustomFieldValue[]
 }
 
 model TestProject {
@@ -69,13 +104,21 @@ model TestProject {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  members      ProjectMember[]
-  suites       TestSuite[]
-  cases        TestCase[]
-  plans        TestPlan[]
-  platforms    Platform[]
-  requirements Requirement[]
-  customFields CustomField[]
+  members             ProjectMember[]
+  suites              TestSuite[]
+  cases               TestCase[]
+  plans               TestPlan[]
+  platforms           Platform[]
+  requirements        Requirement[]
+  customFields        CustomField[]
+  activities          Activity[]
+  savedViews          SavedView[]
+  apiKeys             ApiKey[]
+  exploratorySessions ExploratorySession[]
+  issueLinks          IssueLink[]
+  ciImports           CiImport[]
+  presence            Presence[]
+  automationMappings  AutomationMapping[]
 }
 
 model ProjectMember {
@@ -110,30 +153,40 @@ model TestSuite {
 }
 
 model TestCase {
-  id            String        @id @default(cuid())
-  externalId    Int
-  title         String
-  summary       String        @default("")
-  preconditions String        @default("")
-  steps         String        @default("")
-  expectedResult String       @default("")
-  importance    Importance    @default(MEDIUM)
-  executionType ExecutionType @default(MANUAL)
-  version       Int           @default(1)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  externalId     Int
+  title          String
+  summary        String        @default("")
+  preconditions  String        @default("")
+  steps          String        @default("")
+  expectedResult String        @default("")
+  importance     Importance    @default(MEDIUM)
+  executionType  ExecutionType @default(MANUAL)
+  reviewStatus   ReviewStatus  @default(DRAFT)
+  version        Int           @default(1)
+  automationKey  String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  projectId String
-  suiteId   String
-  authorId  String?
-  project   TestProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  suite     TestSuite      @relation(fields: [suiteId], references: [id], onDelete: Cascade)
-  author    User?          @relation("CaseAuthor", fields: [authorId], references: [id])
-  planLinks PlanTestCase[]
-  reqLinks  RequirementCoverage[]
-  keywords  CaseKeyword[]
+  projectId  String
+  suiteId    String
+  authorId   String?
+  reviewerId String?
+  project    TestProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  suite      TestSuite      @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  author     User?          @relation("CaseAuthor", fields: [authorId], references: [id])
+  reviewer   User?          @relation("CaseReviewer", fields: [reviewerId], references: [id])
+  planLinks  PlanTestCase[]
+  reqLinks   RequirementCoverage[]
+  keywords   CaseKeyword[]
+  datasets   CaseDataset[]
+  fieldValues CustomFieldValue[]
+  issueLinks IssueLink[]
+  activities Activity[]     @relation("CaseActivities")
+  automationMappings AutomationMapping[]
 
   @@unique([projectId, externalId])
+  @@index([automationKey])
 }
 
 model Keyword {
@@ -154,22 +207,38 @@ model CaseKeyword {
   @@id([caseId, keywordId])
 }
 
-model TestPlan {
-  id          String   @id @default(cuid())
-  name        String
-  description String   @default("")
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model CaseDataset {
+  id        String   @id @default(cuid())
+  name      String
+  rowsJson  String   @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  projectId String
-  authorId  String?
-  project   TestProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  author    User?          @relation("PlanAuthor", fields: [authorId], references: [id])
-  builds    Build[]
+  caseId String
+  case   TestCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+}
+
+model TestPlan {
+  id           String       @id @default(cuid())
+  name         String
+  description  String       @default("")
+  active       Boolean      @default(true)
+  reviewStatus ReviewStatus @default(DRAFT)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  projectId  String
+  authorId   String?
+  reviewerId String?
+  project    TestProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author     User?          @relation("PlanAuthor", fields: [authorId], references: [id])
+  reviewer   User?          @relation("PlanReviewer", fields: [reviewerId], references: [id])
+  builds     Build[]
   milestones Milestone[]
-  cases     PlanTestCase[]
-  platforms PlanPlatform[]
+  cases      PlanTestCase[]
+  platforms  PlanPlatform[]
+  activities Activity[]     @relation("PlanActivities")
+  ciImports  CiImport[]
 }
 
 model Platform {
@@ -194,27 +263,28 @@ model PlanPlatform {
 }
 
 model Build {
-  id          String   @id @default(cuid())
-  name        String
-  notes       String   @default("")
-  active      Boolean  @default(true)
-  isOpen      Boolean  @default(true)
-  releasedAt  DateTime?
-  createdAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  name       String
+  notes      String    @default("")
+  active     Boolean   @default(true)
+  isOpen     Boolean   @default(true)
+  releasedAt DateTime?
+  createdAt  DateTime  @default(now())
 
   planId     String
   plan       TestPlan    @relation(fields: [planId], references: [id], onDelete: Cascade)
   executions Execution[]
+  ciImports  CiImport[]
 
   @@unique([planId, name])
 }
 
 model Milestone {
-  id          String    @id @default(cuid())
-  name        String
-  targetDate  DateTime?
-  startDate   DateTime?
-  createdAt   DateTime  @default(now())
+  id         String    @id @default(cuid())
+  name       String
+  targetDate DateTime?
+  startDate  DateTime?
+  createdAt  DateTime  @default(now())
 
   planId String
   plan   TestPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
@@ -228,20 +298,22 @@ model PlanTestCase {
   planId     String
   caseId     String
   assigneeId String?
-  plan       TestPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
-  case       TestCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  assignee   User?     @relation("Assignee", fields: [assigneeId], references: [id])
+  plan       TestPlan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  case       TestCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignee   User?       @relation("Assignee", fields: [assigneeId], references: [id])
   executions Execution[]
 
   @@unique([planId, caseId])
 }
 
 model Execution {
-  id        String          @id @default(cuid())
-  status    ExecutionStatus @default(NOT_RUN)
-  notes     String          @default("")
-  duration  Int?
-  executedAt DateTime       @default(now())
+  id         String          @id @default(cuid())
+  status     ExecutionStatus @default(NOT_RUN)
+  notes      String          @default("")
+  duration   Int?
+  source     String          @default("manual")
+  datasetRow String?
+  executedAt DateTime        @default(now())
 
   planCaseId String
   buildId    String
@@ -251,25 +323,28 @@ model Execution {
   build      Build        @relation(fields: [buildId], references: [id], onDelete: Cascade)
   platform   Platform?    @relation(fields: [platformId], references: [id])
   executor   User?        @relation(fields: [executorId], references: [id])
+  issueLinks IssueLink[]
+  activities Activity[]   @relation("ExecutionActivities")
+
+  @@index([executedAt])
 }
 
 model Requirement {
-  id          String   @id @default(cuid())
-  docId       String
-  title       String
-  scope       String   @default("")
-  status      String   @default("Draft")
-  version     Int      @default(1)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  docId     String
+  title     String
+  scope     String   @default("")
+  status    String   @default("Draft")
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  projectId String
-  authorId  String?
-  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  author    User?       @relation("ReqAuthor", fields: [authorId], references: [id])
-  coverage  RequirementCoverage[]
-
-  @@unique([projectId, docId])
+  projectId  String
+  authorId   String?
+  project    TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author     User?       @relation("ReqAuthor", fields: [authorId], references: [id])
+  coverage   RequirementCoverage[]
+  activities Activity[]  @relation("RequirementActivities")
 }
 
 model RequirementCoverage {
@@ -286,9 +361,167 @@ model CustomField {
   name      String
   label     String
   fieldType String   @default("string")
+  options   String   @default("")
   appliesTo String   @default("testcase")
+  required  Boolean  @default(false)
   projectId String
   project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  values    CustomFieldValue[]
 
   @@unique([projectId, name])
+}
+
+model CustomFieldValue {
+  id      String @id @default(cuid())
+  value   String @default("")
+  fieldId String
+  caseId  String?
+  userId  String?
+  field   CustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  case    TestCase?   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user    User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([fieldId, caseId])
+}
+
+model Activity {
+  id        String       @id @default(cuid())
+  type      ActivityType @default(COMMENT)
+  body      String
+  createdAt DateTime     @default(now())
+
+  projectId     String
+  authorId      String
+  caseId        String?
+  planId        String?
+  executionId   String?
+  requirementId String?
+  project       TestProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author        User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  case          TestCase?    @relation("CaseActivities", fields: [caseId], references: [id], onDelete: Cascade)
+  plan          TestPlan?    @relation("PlanActivities", fields: [planId], references: [id], onDelete: Cascade)
+  execution     Execution?   @relation("ExecutionActivities", fields: [executionId], references: [id], onDelete: Cascade)
+  requirement   Requirement? @relation("RequirementActivities", fields: [requirementId], references: [id], onDelete: Cascade)
+  mentions      Mention[]
+
+  @@index([projectId, createdAt])
+}
+
+model Mention {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  read       Boolean  @default(false)
+  activityId String
+  userId     String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model Presence {
+  id        String   @id @default(cuid())
+  page      String
+  label     String   @default("")
+  updatedAt DateTime @updatedAt
+
+  userId    String
+  projectId String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId, page])
+}
+
+model SavedView {
+  id         String   @id @default(cuid())
+  name       String
+  entity     String   @default("cases")
+  filtersJson String  @default("{}")
+  shared     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  projectId String
+  ownerId   String
+  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  owner     User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model ExploratorySession {
+  id          String    @id @default(cuid())
+  charter     String
+  mission     String    @default("")
+  notes       String    @default("")
+  durationMin Int       @default(60)
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  status      String    @default("active")
+
+  projectId String
+  ownerId   String
+  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  owner     User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model IssueLink {
+  id         String        @id @default(cuid())
+  provider   IssueProvider @default(GITHUB)
+  externalId String
+  url        String
+  title      String        @default("")
+  createdAt  DateTime      @default(now())
+
+  projectId   String
+  caseId      String?
+  executionId String?
+  createdById String?
+  project     TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  case        TestCase?   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  execution   Execution?  @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  createdBy   User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  name       String
+  keyHash    String
+  keyPrefix  String
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  projectId String
+  ownerId   String
+  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  owner     User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([keyPrefix])
+}
+
+model AutomationMapping {
+  id            String   @id @default(cuid())
+  automationKey String
+  createdAt     DateTime @default(now())
+
+  projectId String
+  caseId    String
+  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  case      TestCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, automationKey])
+}
+
+model CiImport {
+  id          String   @id @default(cuid())
+  source      String   @default("junit")
+  payloadHash String   @default("")
+  summaryJson String   @default("{}")
+  createdAt   DateTime @default(now())
+
+  projectId String
+  planId    String?
+  buildId   String?
+  project   TestProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  plan      TestPlan?   @relation(fields: [planId], references: [id], onDelete: SetNull)
+  build     Build?      @relation(fields: [buildId], references: [id], onDelete: SetNull)
 }

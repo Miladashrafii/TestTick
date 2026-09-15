@@ -10,7 +10,7 @@ export function Brand({
 }) {
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
-      <div className="flex size-9 items-center justify-center rounded-lg bg-teal-700 text-white shadow-sm">
+      <div className="flex size-9 items-center justify-center rounded-lg bg-brand-solid text-on-brand shadow-sm">
         <CheckCircle2 className="size-5" strokeWidth={2.25} />
       </div>
       <div className="leading-tight">

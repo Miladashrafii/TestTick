@@ -1,10 +1,17 @@
 @import "tailwindcss";
 
+/* Dark mode is opt-in: the `dark` class is set on <html> by ThemeProvider. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #eef2f6;
   --foreground: #0f172a;
   --brand: #0f766e;
   --surface: rgba(255, 255, 255, 0.72);
+  --brand-solid: #0f766e;
+  --brand-solid-hover: #115e59;
+  --brand-solid-active: #134e4a;
+  --on-brand: #ffffff;
   --font-ui: var(--font-plus-jakarta);
   --font-secondary: var(--font-ibm-plex);
 }
@@ -14,9 +21,78 @@
   --color-foreground: var(--foreground);
   --color-brand: var(--brand);
   --color-surface: var(--surface);
+  --color-brand-solid: var(--brand-solid);
+  --color-brand-solid-hover: var(--brand-solid-hover);
+  --color-brand-solid-active: var(--brand-solid-active);
+  --color-on-brand: var(--on-brand);
   --font-sans: var(--font-ui);
   --font-mono: ui-monospace, monospace;
   --font-vazirmatn: var(--font-vazirmatn);
+}
+
+/*
+ * Dark theme works by remapping the slate/teal/status ramps that the whole app
+ * already uses, so `text-slate-900` or `bg-teal-50` flip automatically.
+ * Because of that remap, never write `dark:` utilities with those same ramps
+ * (inside `.dark`, `dark:bg-slate-800` resolves to a *light* value). Reach for
+ * `bg-brand-solid` / `text-on-brand` when a fill must stay constant.
+ */
+.dark {
+  color-scheme: dark;
+
+  --background: #0b1120;
+  --foreground: #e6ecf5;
+  --brand: #5eead4;
+  --surface: rgba(19, 28, 46, 0.72);
+  --brand-solid: #0d9488;
+  --brand-solid-hover: #14b8a6;
+  --brand-solid-active: #2dd4bf;
+  --on-brand: #ffffff;
+
+  /* Opaque surfaces (`bg-white`, `bg-white/90`, …). */
+  --color-white: #131c2e;
+
+  /* Surfaces get darker, text gets lighter. */
+  --color-slate-50: #0f1728;
+  --color-slate-100: #1a2438;
+  --color-slate-200: #2a3752;
+  --color-slate-300: #3d4d6b;
+  --color-slate-400: #8394ae;
+  --color-slate-500: #9dabc2;
+  --color-slate-600: #b7c3d5;
+  --color-slate-700: #ccd6e4;
+  --color-slate-800: #dde4ee;
+  --color-slate-900: #eef2f8;
+  --color-slate-950: #f8fafc;
+
+  --color-teal-50: #0b2b2a;
+  --color-teal-100: #0f3d3a;
+  --color-teal-200: #175c56;
+  --color-teal-600: #2dd4bf;
+  --color-teal-700: #5eead4;
+  --color-teal-800: #99f6e4;
+  --color-teal-900: #ccfbf1;
+
+  --color-emerald-50: #072a20;
+  --color-emerald-100: #0a3a2c;
+  --color-emerald-200: #125942;
+  --color-emerald-800: #6ee7b7;
+
+  --color-rose-50: #311019;
+  --color-rose-100: #45141f;
+  --color-rose-200: #6b1f2e;
+  --color-rose-700: #fda4af;
+  --color-rose-800: #fecdd3;
+
+  --color-amber-50: #2e1f05;
+  --color-amber-100: #3d2908;
+  --color-amber-200: #5c3f0f;
+  --color-amber-800: #fcd34d;
+
+  --color-sky-50: #0a2438;
+  --color-sky-100: #0d3049;
+  --color-sky-200: #14496e;
+  --color-sky-800: #7dd3fc;
 }
 
 body {
@@ -34,10 +110,22 @@ body {
   min-height: 100dvh;
 }
 
+.dark .atmospheric-bg {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(45, 212, 191, 0.16), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(59, 130, 246, 0.12), transparent),
+    radial-gradient(ellipse 50% 30% at 0% 100%, rgba(15, 118, 110, 0.14), transparent),
+    linear-gradient(180deg, #0d1424 0%, #0a1020 45%, #0b1120 100%);
+}
+
 .glass-panel {
   background: var(--surface);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(226, 232, 240, 0.85);
+}
+
+.dark .glass-panel {
+  border-color: rgba(42, 55, 82, 0.85);
 }
 
 .font-secondary {
@@ -46,4 +134,21 @@ body {
 
 .font-fa {
   font-family: var(--font-vazirmatn), var(--font-ui), sans-serif;
+}
+
+/* Keyboard-shortcut hints in the execution board and cheatsheet. */
+kbd.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-slate-300);
+  border-bottom-width: 2px;
+  background: var(--color-slate-50);
+  color: var(--color-slate-700);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.25rem;
 }

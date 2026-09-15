@@ -35,7 +35,6 @@ export function ExecutionFilters({
     if (plan) params.set("plan", plan);
     if (build) params.set("build", build);
     if (platform) params.set("platform", platform);
-    const q = params.toString();
     router.push(
       {
         pathname: "/projects/[projectId]/execution",
@@ -49,7 +48,7 @@ export function ExecutionFilters({
     <Card>
       <CardContent className="flex flex-wrap gap-4 pt-5">
         <div className="space-y-1.5 min-w-[180px]">
-          <Label>Plan</Label>
+          <Label>{t("plan")}</Label>
           <select
             className="flex h-10 w-full rounded-lg border border-slate-200/90 bg-white/90 px-3 text-sm"
             value={selectedPlanId ?? ""}
@@ -95,7 +94,7 @@ export function ExecutionFilters({
               )
             }
           >
-            <option value="">—</option>
+            <option value="">{t("anyPlatform")}</option>
             {plan?.platforms.map((pl) => (
               <option key={pl.id} value={pl.id}>
                 {pl.name}

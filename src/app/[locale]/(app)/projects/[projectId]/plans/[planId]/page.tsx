@@ -8,6 +8,7 @@ import {
   createPlatformForPlan,
   assignCasesToPlan,
 } from "@/lib/actions/plans";
+import { ReviewActions } from "@/components/review/review-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ export default async function PlanDetailPage({
     include: {
       builds: { orderBy: { createdAt: "desc" } },
       platforms: { include: { platform: true } },
+      reviewer: { select: { name: true } },
       cases: {
         include: {
           case: true,
@@ -72,6 +74,19 @@ export default async function PlanDetailPage({
           {plan.description || "—"}
         </p>
       </div>
+
+      <Card>
+        <CardContent className="py-4">
+          <ReviewActions
+            locale={locale}
+            projectId={projectId}
+            entity="plan"
+            entityId={planId}
+            status={plan.reviewStatus}
+            reviewerName={plan.reviewer?.name}
+          />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -119,7 +134,7 @@ export default async function PlanDetailPage({
             <form action={addPlatform} className="flex gap-2">
               <input type="hidden" name="projectId" value={projectId} />
               <input type="hidden" name="planId" value={planId} />
-              <Input name="name" placeholder="Platform" required />
+              <Input name="name" placeholder={t("platformName")} required />
               <Button type="submit" size="sm">
                 {tCommon("create")}
               </Button>

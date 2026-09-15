@@ -3,6 +3,9 @@ import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { Plus_Jakarta_Sans, IBM_Plex_Sans, Vazirmatn } from "next/font/google";
 import { routing, isRtl } from "@/i18n/routing";
+import { ThemeProvider, themeInitScript } from "@/components/theme/theme-provider";
+import { persistTheme } from "@/lib/actions/forms";
+import { getUserTheme } from "@/lib/actions/settings";
 
 const plusJakarta = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta",
@@ -38,6 +41,7 @@ export default async function LocaleLayout({
 
   setRequestLocale(locale);
   const messages = await getMessages();
+  const serverTheme = await getUserTheme();
   const dir = isRtl(locale) ? "rtl" : "ltr";
   const fontVars = `${plusJakarta.variable} ${ibmPlex.variable} ${vazirmatn.variable}`;
 
@@ -46,14 +50,26 @@ export default async function LocaleLayout({
       lang={locale}
       dir={dir}
       className={`${fontVars} h-full antialiased`}
+      suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{ __html: themeInitScript }}
+          suppressHydrationWarning
+        />
+      </head>
       <body
         className={`min-h-full text-slate-900 atmospheric-bg ${
           locale === "fa" ? "font-fa" : "font-sans"
         }`}
       >
         <NextIntlClientProvider messages={messages}>
-          {children}
+          <ThemeProvider
+            serverTheme={serverTheme}
+            persist={persistTheme.bind(null, locale)}
+          >
+            {children}
+          </ThemeProvider>
         </NextIntlClientProvider>
       </body>
     </html>

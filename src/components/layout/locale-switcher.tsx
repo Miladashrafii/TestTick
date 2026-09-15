@@ -36,7 +36,7 @@ export function LocaleSwitcher({ className }: { className?: string }) {
           className={cn(
             "rounded-md px-2.5 py-1 transition-colors",
             locale === l.code
-              ? "bg-teal-700 text-white shadow-sm"
+              ? "bg-brand-solid text-on-brand shadow-sm"
               : "text-slate-600 hover:bg-slate-100",
           )}
         >

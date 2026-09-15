@@ -11,6 +11,11 @@ const createCaseSchema = z.object({
   suiteId: z.string().min(1),
   title: z.string().min(1).max(300),
   summary: z.string().max(5000).optional(),
+  preconditions: z.string().max(5000).optional(),
+  steps: z.string().max(10000).optional(),
+  expectedResult: z.string().max(5000).optional(),
+  importance: z.nativeEnum(Importance).optional(),
+  executionType: z.nativeEnum(ExecutionType).optional(),
 });
 
 const updateCaseSchema = z.object({
@@ -34,6 +39,11 @@ export async function createCase(locale: string, formData: FormData) {
     suiteId: formData.get("suiteId"),
     title: formData.get("title"),
     summary: formData.get("summary") || undefined,
+    preconditions: formData.get("preconditions") || undefined,
+    steps: formData.get("steps") || undefined,
+    expectedResult: formData.get("expectedResult") || undefined,
+    importance: formData.get("importance") || undefined,
+    executionType: formData.get("executionType") || undefined,
   });
   if (!parsed.success) return;
 
@@ -50,6 +60,11 @@ export async function createCase(locale: string, formData: FormData) {
       externalId,
       title: parsed.data.title,
       summary: parsed.data.summary ?? "",
+      preconditions: parsed.data.preconditions ?? "",
+      steps: parsed.data.steps ?? "",
+      expectedResult: parsed.data.expectedResult ?? "",
+      importance: parsed.data.importance ?? Importance.MEDIUM,
+      executionType: parsed.data.executionType ?? ExecutionType.MANUAL,
       authorId: session.user.id,
     },
   });

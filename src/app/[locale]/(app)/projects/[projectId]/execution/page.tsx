@@ -2,14 +2,21 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { ExecutionStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { caseExternalId, statusColor, cn } from "@/lib/utils";
+import { caseExternalId, cn, statusColor } from "@/lib/utils";
 import { recordExecution } from "@/lib/actions/executions";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  buildGitHubIssueUrl,
+  buildTemplateFromExecution,
+  listIssueLinks,
+} from "@/lib/issues";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExecutionFilters } from "@/components/execution/execution-filters";
+import {
+  ExecutionBoard,
+  type ExecutionBoardCase,
+} from "@/components/execution/execution-board";
+import { IssueLinksPanel } from "@/components/issues/issue-links-panel";
 
 export default async function ExecutionPage({
   params,
@@ -21,10 +28,9 @@ export default async function ExecutionPage({
   const { locale, projectId } = await params;
   const sp = await searchParams;
   const t = await getTranslations("execution");
+  const tIssues = await getTranslations("issues");
 
-  const project = await prisma.testProject.findUnique({
-    where: { id: projectId },
-  });
+  const project = await prisma.testProject.findUnique({ where: { id: projectId } });
   if (!project) notFound();
 
   const plans = await prisma.testPlan.findMany({
@@ -55,8 +61,8 @@ export default async function ExecutionPage({
       ? await prisma.planTestCase.findMany({
           where: { planId },
           include: {
-            case: true,
-            assignee: true,
+            case: { select: { id: true, externalId: true, title: true } },
+            assignee: { select: { name: true } },
             executions: {
               where: { buildId },
               orderBy: { executedAt: "desc" },
@@ -67,14 +73,51 @@ export default async function ExecutionPage({
         })
       : [];
 
-  const record = recordExecution.bind(null, locale);
+  const boardCases: ExecutionBoardCase[] = planCases.map((planCase) => {
+    const latest = planCase.executions[0];
+    return {
+      planCaseId: planCase.id,
+      caseId: planCase.case.id,
+      caseRef: caseExternalId(project.prefix, planCase.case.externalId),
+      title: planCase.case.title,
+      assigneeName: planCase.assignee?.name ?? null,
+      latestStatus: latest?.status ?? null,
+      latestNotes: latest?.notes ?? "",
+    };
+  });
 
-  const statuses = [
-    ExecutionStatus.PASSED,
-    ExecutionStatus.FAILED,
-    ExecutionStatus.BLOCKED,
-    ExecutionStatus.SKIPPED,
-  ] as const;
+  const failed = buildId
+    ? await prisma.execution.findMany({
+        where: {
+          buildId,
+          status: ExecutionStatus.FAILED,
+          planCase: { plan: { projectId } },
+        },
+        orderBy: { executedAt: "desc" },
+        take: 5,
+        include: {
+          planCase: {
+            include: { case: { select: { id: true, externalId: true, title: true } } },
+          },
+        },
+      })
+    : [];
+
+  const failedPanels = await Promise.all(
+    failed.map(async (execution) => {
+      const [template, links] = await Promise.all([
+        buildTemplateFromExecution(execution.id),
+        listIssueLinks(projectId, { executionId: execution.id }),
+      ]);
+      return {
+        execution,
+        links,
+        newIssueUrl: template
+          ? buildGitHubIssueUrl({ ...template, labels: ["bug"] })
+          : null,
+      };
+    }),
+  );
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -82,7 +125,7 @@ export default async function ExecutionPage({
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
           {t("title")}
         </h1>
-        <p className="mt-1 text-slate-600 font-secondary">
+        <p className="mt-1 font-secondary text-slate-600">
           {project.name} · {t("subtitle")}
         </p>
       </div>
@@ -103,89 +146,63 @@ export default async function ExecutionPage({
         selectedPlatformId={platformId}
       />
 
-      {!planId || !buildId ? (
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-slate-500">
-            {t("empty")}
-          </CardContent>
-        </Card>
-      ) : planCases.length === 0 ? (
+      {!planId || !buildId || boardCases.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-slate-500">
             {t("empty")}
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {planCases.map((pc) => {
-            const latest = pc.executions[0];
-            return (
-              <Card key={pc.id}>
-                <CardHeader className="pb-2">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <CardTitle className="text-base font-medium">
-                      {caseExternalId(project.prefix, pc.case.externalId)} —{" "}
-                      {pc.case.title}
-                    </CardTitle>
-                    {latest && (
-                      <Badge
-                        className={cn("border", statusColor(latest.status))}
-                        variant="outline"
-                      >
-                        {latest.status.replace("_", " ")}
-                      </Badge>
-                    )}
-                  </div>
-                  {pc.assignee && (
-                    <p className="text-xs text-slate-500">
-                      {t("assignee")}: {pc.assignee.name}
-                    </p>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  <form action={record} className="space-y-3">
-                    <input type="hidden" name="projectId" value={projectId} />
-                    <input type="hidden" name="planCaseId" value={pc.id} />
-                    <input type="hidden" name="buildId" value={buildId} />
-                    {platformId && (
-                      <input type="hidden" name="platformId" value={platformId} />
-                    )}
-                    <div className="space-y-2">
-                      <Label>{t("status")}</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {statuses.map((s) => (
-                          <label
-                            key={s}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm cursor-pointer has-[:checked]:border-teal-600 has-[:checked]:bg-teal-50"
-                          >
-                            <input
-                              type="radio"
-                              name="status"
-                              value={s}
-                              defaultChecked={s === ExecutionStatus.PASSED}
-                              className="accent-teal-700"
-                            />
-                            {s === ExecutionStatus.PASSED && t("pass")}
-                            {s === ExecutionStatus.FAILED && t("fail")}
-                            {s === ExecutionStatus.BLOCKED && t("block")}
-                            {s === ExecutionStatus.SKIPPED && t("skip")}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`notes-${pc.id}`}>{t("notes")}</Label>
-                      <Textarea id={`notes-${pc.id}`} name="notes" rows={2} />
-                    </div>
-                    <Button type="submit" size="sm">
-                      {t("saveResult")}
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        <ExecutionBoard
+          projectId={projectId}
+          buildId={buildId}
+          platformId={platformId}
+          cases={boardCases}
+          saveAction={recordExecution.bind(null, locale)}
+        />
+      )}
+
+      {failedPanels.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            {tIssues("failedInBuild")}
+          </h2>
+          {failedPanels.map(({ execution, links, newIssueUrl }) => (
+            <Card key={execution.id}>
+              <CardHeader className="pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle className="text-sm font-medium">
+                    <span className="font-mono text-xs text-slate-500">
+                      {caseExternalId(project.prefix, execution.planCase.case.externalId)}
+                    </span>{" "}
+                    {execution.planCase.case.title}
+                  </CardTitle>
+                  <Badge
+                    variant="outline"
+                    className={cn("border", statusColor(execution.status))}
+                  >
+                    {execution.status}
+                  </Badge>
+                </div>
+                {execution.notes && (
+                  <p className="font-secondary text-xs text-slate-500">
+                    {execution.notes}
+                  </p>
+                )}
+              </CardHeader>
+              <CardContent className="pt-0">
+                <IssueLinksPanel
+                  locale={locale}
+                  projectId={projectId}
+                  executionId={execution.id}
+                  links={links}
+                  newIssueUrl={newIssueUrl}
+                  compact
+                />
+              </CardContent>
+            </Card>
+          ))}
+        </section>
       )}
     </div>
   );
